@@ -1,0 +1,231 @@
+/* GLOBAL */
+body {
+  margin: 0;
+  padding: 0;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: url('2.jpg') no-repeat center center fixed;
+  background-size: cover;
+  color: #333;
+  min-height: 100vh;
+  transition: background-color 0.3s, color 0.3s;
+}
+
+/* DARK MODE */
+body.dark-mode {
+  background: url('1.jpg') no-repeat center center fixed;
+  background-size: cover;
+  color: #f0f0f0;
+}
+
+.panel {
+  background: #f0f4f8;
+  border-radius: 16px;
+  box-shadow:
+    6px 6px 12px #d1d9e6,
+    -6px -6px 12px #ffffff;
+  transition: box-shadow 0.2s ease-in-out, background-color 0.3s;
+}
+
+body.dark-mode .panel {
+  background: #2c2c2c;
+  box-shadow:
+    6px 6px 12px #1a1a1a,
+    -6px -6px 12px #3e3e3e;
+}
+
+.navbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px 25px;
+  margin: 10px auto;
+  width: 95%;
+}
+
+.navbar-brand {
+  font-size: 20px;
+  font-weight: 600;
+  color: #2e2e2e;
+}
+
+body.dark-mode .navbar-brand {
+  color: #f0f0f0;
+}
+
+.navbar-menu button {
+  background: #ffffff;
+  border: none;
+  padding: 10px 20px;
+  margin: 6px;
+  border-radius: 30px;
+  font-size: 14px;
+  color: #333;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+}
+
+body.dark-mode .navbar-menu button {
+  background: #444;
+  color: #fff;
+}
+
+.navbar-menu button:hover {
+  transform: scale(1.06);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+body.dark-mode .navbar-menu button:hover {
+  transform: scale(1.06);
+  box-shadow: 0 4px 20px rgba(255, 255, 255, 0.1);
+}
+
+.container {
+  width: 95%;
+  margin: 0 auto;
+  padding: 30px 0;
+}
+
+.content {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  justify-content: space-between;
+}
+
+.video-frame {
+  flex: 2 1 60%;
+  min-width: 300px;
+  padding: 20px;
+  border-radius: 20px;
+  background: #ffffff;
+}
+
+body.dark-mode .video-frame {
+  background: #333;
+}
+
+video {
+  width: 100%;
+  max-height: 400px;
+  border-radius: 12px;
+  background: #f0f0f0;
+  padding: 6px;
+  border: 1px solid #ddd;
+  box-shadow: inset 2px 2px 4px #e0e0e0,
+              inset -2px -2px 4px #ffffff;
+  transition: all 0.2s ease;
+  object-fit: cover; /* This ensures the video covers the container */
+}
+
+body.dark-mode video {
+  background: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 12px;
+  padding: 6px;
+  box-shadow: inset 2px 2px 4px #1c1c1c,
+              inset -2px -2px 4px #383838;
+  object-fit: cover; /* Ensure video fits correctly in dark mode too */
+}
+
+.info-panel {
+  flex: 1;
+  min-width: 250px;
+  padding: 20px;
+  border-radius: 20px;
+  background: #ffffff;
+}
+
+body.dark-mode .info-panel {
+  background: #444;
+}
+
+.info-panel h2 {
+  font-size: 18px;
+  margin-bottom: 16px;
+  color: #2c2c2c;
+  border-bottom: 1px solid #dcdcdc;
+  padding-bottom: 8px;
+}
+
+body.dark-mode .info-panel h2 {
+  color: #f0f0f0;
+  border-bottom: 1px solid #555;
+}
+
+.info-panel p {
+  font-size: 14px;
+  margin: 8px 0;
+}
+
+body.dark-mode .info-panel p {
+  color: #ddd;
+}
+
+#sensitivity {
+  width: 100%;
+  margin-top: 10px;
+}
+
+.video-frame:hover,
+.info-panel:hover {
+  transform: scale(1.01);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+body.dark-mode .video-frame:hover,
+body.dark-mode .info-panel:hover {
+  box-shadow: 0 4px 20px rgba(255, 255, 255, 0.1);
+}
+
+
+/* RESPONSIVE */
+@media (max-width: 768px) {
+  .content {
+    flex-direction: column;
+  }
+
+  .info-panel {
+    margin-left: 0;
+    margin-top: 20px;
+  }
+
+  .navbar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .navbar-menu {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .navbar-menu button {
+    width: 100%;
+  }
+}
+.live-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 8px;
+  background-color: red;
+  border-radius: 50%;
+  animation: pulse 1.2s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(0.95);
+    opacity: 0.7;
+  }
+  70% {
+    transform: scale(1.4);
+    opacity: 0.2;
+  }
+  100% {
+    transform: scale(0.95);
+    opacity: 0.7;
+  }
+}

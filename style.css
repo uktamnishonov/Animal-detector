@@ -27,7 +27,7 @@ body.dark-mode {
 }
 
 body.dark-mode .panel {
-  background: #2c2c2c;
+  background: #1a1a1a;
   box-shadow:
     6px 6px 12px #1a1a1a,
     -6px -6px 12px #3e3e3e;
@@ -74,6 +74,10 @@ body.dark-mode .navbar-menu button {
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
+.navbar-menu button:active {
+  transform: scale(0.96);
+}
+
 
 body.dark-mode .navbar-menu button:hover {
   transform: scale(1.06);
@@ -102,7 +106,7 @@ body.dark-mode .navbar-menu button:hover {
 }
 
 body.dark-mode .video-frame {
-  background: #333;
+  background: #313030;
 }
 
 video {
@@ -137,7 +141,7 @@ body.dark-mode video {
 }
 
 body.dark-mode .info-panel {
-  background: #444;
+  background: #313030;
 }
 
 .info-panel h2 {
@@ -177,7 +181,6 @@ body.dark-mode .video-frame:hover,
 body.dark-mode .info-panel:hover {
   box-shadow: 0 4px 20px rgba(255, 255, 255, 0.1);
 }
-
 
 /* RESPONSIVE */
 @media (max-width: 768px) {

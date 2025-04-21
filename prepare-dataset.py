@@ -1,110 +1,149 @@
 import os
 import shutil
-import random
-from pathlib import Path
-import numpy as np
-from PIL import Image
+import yaml
+import subprocess
 
-# Define paths and settings
-source_dir = "animal-dataset"
-dest_dir = "animal-dataset-yolo"
-train_ratio = 0.8
-MAX_IMAGES_PER_CLASS = 1000  # For dataset balancing
+# Dataset configurations with direct download URLs
+datasets = [
+    {"name": "deervision", "class_name": "deer", "url": "https://universe.roboflow.com/ds/bvyRMSzhpb?key=VBi6YEe6Xz"},
+    {"name": "firefox2", "class_name": "fox", "url": "https://universe.roboflow.com/ds/Swp66vZE4l?key=KlDZ1tPMrh"},
+    {"name": "liskina", "class_name": "beaver", "url": "https://universe.roboflow.com/ds/Ccl8l5zbuL?key=XtXtqU08qw"},
+    {"name": "beaverdetection", "class_name": "beaver", "url": "https://universe.roboflow.com/ds/50JkkoSJ5A?key=9AFqpLAJVk"},
+    {"name": "racoonsfinder", "class_name": "raccoon", "url": "https://universe.roboflow.com/ds/633vWMmscg?key=QKEtXLvDvM"},
+    {"name": "deteksi-kelinci", "class_name": "rabbit", "url": "https://universe.roboflow.com/ds/31Y3zyQL0i?key=loSj8JbokZ"},
+    {"name": "squirrel-annotation", "class_name": "squirrel", "url": "https://universe.roboflow.com/ds/eOVSFDCPj5?key=bJ5iTdlosp"},
+    {"name": "goat-swaod", "class_name": "goat", "url": "https://universe.roboflow.com/ds/3AWT3yB66c?key=HJk21w7ToM"},
+    {"name": "chicken-x9rj8", "class_name": "chicken", "url": "https://universe.roboflow.com/ds/fJ4Tka5gmY?key=AYUmjAbb0q"},
+    {"name": "skunk", "class_name": "skunk", "url": "https://universe.roboflow.com/ds/GcIqVUYqaY?key=uZ9JEAIVuz"},
+    {"name": "canine-detection", "class_name": "coyote", "url": "https://universe.roboflow.com/ds/g2TEXqVOWz?key=vj45X0pWsn"},
+    {"name": "pangolin", "class_name": "armadillo", "url": "https://universe.roboflow.com/ds/BQ2kDCuVmg?key=olSDXvfJOn"},
+    {"name": "outdoor-cats", "class_name": "cat", "url": "https://universe.roboflow.com/ds/uRX8CEcWdM?key=uNSsg7hkUc"},
+    {"name": "outdoor-dogs", "class_name": "dog", "url": "https://universe.roboflow.com/ds/Onfj1F481G?key=JoW2uui0cI"}
+]
 
-# Define class mapping including base YOLO classes and new ones
-base_classes = ["cat", "dog", "bird", "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe"]
-additional_classes = ["deer", "fox", "beaver", "raccoon", "rabbit", "squirrel", "goat", "chicken", "skunk", "coyote"]
-class_names = base_classes + additional_classes
-class_map = {name.upper(): idx for idx, name in enumerate(class_names)}
-
-def create_directories():
-    """Create necessary directories for YOLO format"""
-    os.makedirs(f"{dest_dir}/images/train", exist_ok=True)
-    os.makedirs(f"{dest_dir}/images/val", exist_ok=True)
-    os.makedirs(f"{dest_dir}/labels/train", exist_ok=True)
-    os.makedirs(f"{dest_dir}/labels/val", exist_ok=True)
-
-def balance_dataset(image_paths, max_images):
-    """Balance dataset by randomly selecting up to max_images"""
-    if len(image_paths) > max_images:
-        return random.sample(image_paths, max_images)
-    return image_paths
-
-def process_dataset():
-    """Process and organize the dataset"""
-    create_directories()
-    all_images = {cls.upper(): [] for cls in class_names}
+def download_datasets():
+    """Download all datasets using curl"""
+    base_dir = "animal-dataset"
     
-    # Collect and balance images
-    for class_name in os.listdir(source_dir):
-        if not os.path.isdir(os.path.join(source_dir, class_name)):
-            continue
-            
-        if class_name not in class_map:
-            print(f"Skipping unknown class: {class_name}")
-            continue
-            
-        class_dir = os.path.join(source_dir, class_name)
-        images = [f for f in os.listdir(class_dir) 
-                 if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
-        
-        # Get full paths
-        image_paths = [os.path.join(class_dir, img) for img in images]
-        
-        # Balance dataset
-        balanced_images = balance_dataset(image_paths, MAX_IMAGES_PER_CLASS)
-        all_images[class_name] = balanced_images
-        print(f"Collected {len(balanced_images)} images for {class_name}")
+    # Clean up and create base directory
+    if os.path.exists(base_dir):
+        shutil.rmtree(base_dir)
+    os.makedirs(base_dir)
     
-    # Split and copy images/labels
-    for class_name, images in all_images.items():
-        if not images:
-            continue
-            
-        random.shuffle(images)
-        split_idx = int(len(images) * train_ratio)
-        train_images = images[:split_idx]
-        val_images = images[split_idx:]
+    for dataset in datasets:
+        print(f"\nDownloading {dataset['name']} dataset...")
+        dataset_dir = os.path.join(base_dir, dataset['name'])
+        os.makedirs(dataset_dir, exist_ok=True)
         
-        # Process train and validation sets
-        for img_set, subset in [(train_images, "train"), (val_images, "val")]:
-            for img_path in img_set:
-                # Copy image
-                img_filename = os.path.basename(img_path)
-                new_img_path = os.path.join(dest_dir, "images", subset, f"{class_name}_{img_filename}")
-                shutil.copy2(img_path, new_img_path)
-                
-                # Create YOLO format label
-                with Image.open(img_path) as img:
-                    img_width, img_height = img.size
-                
-                # Create label with centered bounding box (80% of image size)
-                box_width = 0.8
-                box_height = 0.8
-                x_center = 0.5
-                y_center = 0.5
-                
-                label_filename = os.path.splitext(img_filename)[0] + ".txt"
-                label_path = os.path.join(dest_dir, "labels", subset, f"{class_name}_{label_filename}")
-                
-                with open(label_path, "w") as f:
-                    f.write(f"{class_map[class_name]} {x_center} {y_center} {box_width} {box_height}\n")
+        # Download and extract dataset
+        try:
+            # Download zip file
+            zip_path = os.path.join(dataset_dir, "dataset.zip")
+            curl_command = f"curl -L '{dataset['url']}' > {zip_path}"
+            subprocess.run(curl_command, shell=True, check=True)
+            
+            # Extract zip file
+            unzip_command = f"unzip {zip_path} -d {dataset_dir}"
+            subprocess.run(unzip_command, shell=True, check=True)
+            
+            # Clean up zip file
+            os.remove(zip_path)
+            print(f"Successfully downloaded and extracted {dataset['name']}")
+        except Exception as e:
+            print(f"Error processing {dataset['name']}: {str(e)}")
+            continue
 
-def create_yaml():
-    """Create YAML configuration file for YOLOv8"""
-    yaml_path = os.path.join(dest_dir, "data.yaml")
-    with open(yaml_path, "w") as f:
-        f.write(f"path: {os.path.abspath(dest_dir)}\n")
-        f.write("train: images/train\n")
-        f.write("val: images/val\n\n")
-        f.write(f"nc: {len(class_names)}\n")
-        f.write("names:\n")
-        for idx, name in enumerate(class_names):
-            f.write(f"  {idx}: {name.lower()}\n")
+def create_combined_dataset():
+    """Combine all downloaded datasets into one YOLO format dataset"""
+    source_dir = "animal-dataset"
+    target_dir = "animal-dataset-yolo"
+    
+    # Remove existing target directory if it exists
+    if os.path.exists(target_dir):
+        shutil.rmtree(target_dir)
+    
+    # Create main dataset directory with correct structure
+    for split in ['train', 'valid']:
+        os.makedirs(os.path.join(target_dir, split, 'images'), exist_ok=True)
+        os.makedirs(os.path.join(target_dir, split, 'labels'), exist_ok=True)
+
+    # Keep track of class names and their indices
+    class_names = []
+    
+    # Process each downloaded dataset
+    for dataset in datasets:
+        print(f"\nProcessing {dataset['name']} dataset...")
+        try:
+            dataset_dir = os.path.join(source_dir, dataset['name'])
+            if not os.path.exists(dataset_dir):
+                print(f"Skipping {dataset['name']} - directory not found")
+                continue
+            
+            # Add class name if not already in list
+            if dataset['class_name'] not in class_names:
+                class_names.append(dataset['class_name'])
+            
+            class_idx = class_names.index(dataset['class_name'])
+            
+            # Move files to combined dataset
+            for split in ['train', 'valid']:
+                src_img_dir = os.path.join(dataset_dir, split, 'images')
+                src_label_dir = os.path.join(dataset_dir, split, 'labels')
+                
+                if os.path.exists(src_img_dir):
+                    # Copy images and labels
+                    for img in os.listdir(src_img_dir):
+                        shutil.copy2(
+                            os.path.join(src_img_dir, img),
+                            os.path.join(target_dir, split, 'images', f"{dataset['name']}_{img}")
+                        )
+                        
+                        # Copy and update label file if it exists
+                        label_file = img.replace('.jpg', '.txt').replace('.jpeg', '.txt').replace('.png', '.txt')
+                        if os.path.exists(os.path.join(src_label_dir, label_file)):
+                            update_label_file(
+                                os.path.join(src_label_dir, label_file),
+                                os.path.join(target_dir, split, 'labels', f"{dataset['name']}_{label_file}"),
+                                class_idx
+                            )
+            
+            print(f"Successfully processed {dataset['name']}")
+            
+        except Exception as e:
+            print(f"Error processing {dataset['name']}: {str(e)}")
+            continue
+    
+    # Create data.yaml file
+    create_data_yaml(target_dir, class_names)
+    print("\nDataset preparation completed!")
+    print(f"Total number of classes: {len(class_names)}")
+    print(f"Classes: {', '.join(class_names)}")
+
+def update_label_file(src_path, dst_path, new_class_idx):
+    """Update label file with new class index"""
+    with open(src_path, 'r') as src, open(dst_path, 'w') as dst:
+        for line in src:
+            parts = line.strip().split()
+            if parts:
+                # Replace class index with new index
+                parts[0] = str(new_class_idx)
+                dst.write(' '.join(parts) + '\n')
+
+def create_data_yaml(base_dir, class_names):
+    """Create data.yaml file for YOLOv8 training"""
+    data = {
+        'path': os.path.abspath(base_dir),
+        'train': os.path.join('train', 'images'),
+        'val': os.path.join('valid', 'images'),
+        'names': {i: name for i, name in enumerate(class_names)},
+        'nc': len(class_names)
+    }
+    
+    with open(os.path.join(base_dir, 'data.yaml'), 'w') as f:
+        yaml.dump(data, f, sort_keys=False)
 
 if __name__ == "__main__":
-    process_dataset()
-    create_yaml()
-    print("\nDataset preparation completed!")
-    print(f"Dataset structure created at {dest_dir}")
-    print("Note: Simple centered bounding boxes were created. For better accuracy, consider using actual annotations.")
+    # First download all datasets using curl
+    download_datasets()
+    # Then combine them
+    create_combined_dataset()

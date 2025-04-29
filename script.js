@@ -34,15 +34,21 @@ function showLiveCamera() {
   }
 
   // JavaScript to toggle dark mode
-  const modeToggleBtn = document.getElementById('modeToggle');
+// Rocker switch dark mode toggle
+const modeToggle = document.getElementById('modeToggle');
 
-  modeToggleBtn.addEventListener('click', function () {
-    document.body.classList.toggle('dark-mode');
-  
-    if (document.body.classList.contains('dark-mode')) {
-      this.textContent = '🌞 Light Mode';
-    } else {
-      this.textContent = '🌑 Dark Mode';
-    }
+// On page load, apply saved theme
+if (localStorage.getItem("theme") === "dark") {
+  document.body.classList.add("dark-mode");
+  modeToggle.checked = true;
+}
+
+modeToggle.addEventListener('change', function () {
+  if (this.checked) {
+    document.body.classList.add("dark-mode");
+    localStorage.setItem("theme", "dark");
+  } else {
+    document.body.classList.remove("dark-mode");
+    localStorage.setItem("theme", "light");
   }
-);
+});

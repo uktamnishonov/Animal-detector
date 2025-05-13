@@ -119,7 +119,7 @@ video {
   box-shadow: inset 2px 2px 4px #e0e0e0,
               inset -2px -2px 4px #ffffff;
   transition: all 0.2s ease;
-  object-fit: cover; /* This ensures the video covers the container */
+  object-fit: cover; 
 }
 
 body.dark-mode video {
@@ -129,7 +129,7 @@ body.dark-mode video {
   padding: 6px;
   box-shadow: inset 2px 2px 4px #1c1c1c,
               inset -2px -2px 4px #383838;
-  object-fit: cover; /* Ensure video fits correctly in dark mode too */
+  object-fit: cover; 
 }
 
 .info-panel {
@@ -165,9 +165,6 @@ body.dark-mode .info-panel h2 {
 body.dark-mode .info-panel p {
   color: #ddd;
 }
-
-/* From Uiverse.io by Galahhad */ 
-/* level settings 👇 */
 
 .slider {
   /* slider */
@@ -318,7 +315,7 @@ body.dark-mode .info-panel:hover {
   font-size: 0.1em;
  /* Sizes the switch */
   margin: 0.1em;
-  transform: scale(0.3); /* Optional: fine-tune scaling */
+  transform: scale(0.3);
 }
 
 .rocker::before {
@@ -438,7 +435,7 @@ input:checked:focus + .switch-left + .switch-right {
 .navbar-menu .rocker {
   margin: 6px;
   font-size: 1em;
-  transform: scale(0.85); /* optional: reduce size to match buttons */
+  transform: scale(0.85);
   cursor: pointer;
   vertical-align: middle;
 

@@ -40,6 +40,9 @@ wandb
 # System files
 .DS_Store
 Thumbs.db
+capstoneenv/
+animal-dataset-yolo/
+animal-dataset/
 
 *.jpg
 *.txt

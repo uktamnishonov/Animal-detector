@@ -24,30 +24,6 @@ dataset = version.download("yolov8")
 
 terminal - curl -L "https://universe.roboflow.com/ds/Swp66vZE4l?key=KlDZ1tPMrh" > roboflow.zip; unzip roboflow.zip; rm roboflow.zip
 
-# Beaver (101 images) - https://universe.roboflow.com/neiro/liskina
-
-!pip install roboflow
-
-from roboflow import Roboflow
-rf = Roboflow(api_key="fAGoBAjyntbA5qqOiBmw")
-project = rf.workspace("neiro").project("liskina")
-version = project.version(1)
-dataset = version.download("yolov8")
-
-terminal - curl -L "https://universe.roboflow.com/ds/Ccl8l5zbuL?key=XtXtqU08qw" > roboflow.zip; unzip roboflow.zip; rm roboflow.zip
-
-# Beaver (100 images) - https://universe.roboflow.com/polina-erwnx/beaverdetection
-
-!pip install roboflow
-
-from roboflow import Roboflow
-rf = Roboflow(api_key="fAGoBAjyntbA5qqOiBmw")
-project = rf.workspace("polina-erwnx").project("beaverdetection")
-version = project.version(1)
-dataset = version.download("yolov8")
-
-terminal - curl -L "https://universe.roboflow.com/ds/50JkkoSJ5A?key=9AFqpLAJVk" > roboflow.zip; unzip roboflow.zip; rm roboflow.zip
-
 # Raccoons (1832 images) - https://universe.roboflow.com/objectdection2/racoonsfinder
 
 !pip install roboflow
@@ -71,6 +47,19 @@ version = project.version(1)
 dataset = version.download("yolov8")
 
 terminal - curl -L "https://universe.roboflow.com/ds/31Y3zyQL0i?key=loSj8JbokZ" > roboflow.zip; unzip roboflow.zip; rm roboflow.zip
+
+# Rabbit (96 images) - https://universe.roboflow.com/kelinci/deteksi_kelinci/dataset/1/download/yolov8
+
+!pip install roboflow
+
+from roboflow import Roboflow
+rf = Roboflow(api_key="fAGoBAjyntbA5qqOiBmw")
+project = rf.workspace("kelinci").project("deteksi_kelinci")
+version = project.version(1)
+dataset = version.download("yolov8")
+                
+
+curl -L "https://universe.roboflow.com/ds/5Tgre9cLMJ?key=kpqloiqXtY" > roboflow.zip; unzip roboflow.zip; rm roboflow.zip
 
 # Squirrels (408 images) - https://universe.roboflow.com/shubhchdev/squirrel-annotation
 
@@ -96,29 +85,17 @@ dataset = version.download("yolov8")
 
 terminal - curl -L "https://universe.roboflow.com/ds/3AWT3yB66c?key=HJk21w7ToM" > roboflow.zip; unzip roboflow.zip; rm roboflow.zip
 
-# Chicken (233 images) - https://universe.roboflow.com/mpt-course-6erck/chicken-x9rj8/dataset/4#
+# Goat (200 images) - https://universe.roboflow.com/testworkspace-vep1q/deteksi-kambing-ugcej/dataset/1/download/yolov8
 
 !pip install roboflow
 
 from roboflow import Roboflow
 rf = Roboflow(api_key="fAGoBAjyntbA5qqOiBmw")
-project = rf.workspace("mpt-course-6erck").project("chicken-x9rj8")
-version = project.version(4)
-dataset = version.download("yolov8")
-
-curl -L "https://universe.roboflow.com/ds/fJ4Tka5gmY?key=AYUmjAbb0q" > roboflow.zip; unzip roboflow.zip; rm roboflow.zip
-
-# Skunks - (200 images) - https://universe.roboflow.com/practicas-6jgbv/skunk
-
-!pip install roboflow
-
-from roboflow import Roboflow
-rf = Roboflow(api_key="fAGoBAjyntbA5qqOiBmw")
-project = rf.workspace("practicas-6jgbv").project("skunk")
+project = rf.workspace("testworkspace-vep1q").project("deteksi-kambing-ugcej")
 version = project.version(1)
 dataset = version.download("yolov8")
-
-curl -L "https://universe.roboflow.com/ds/GcIqVUYqaY?key=uZ9JEAIVuz" > roboflow.zip; unzip roboflow.zip; rm roboflow.zip
+                
+curl -L "https://universe.roboflow.com/ds/v9VG7G4Yki?key=BqAQmBLVdA" > roboflow.zip; unzip roboflow.zip; rm roboflow.zip
 
 # Coyotes (628 images) - https://universe.roboflow.com/canine-detection/canine-detection-v13on
 
@@ -132,14 +109,33 @@ dataset = version.download("yolov8")
 
 curl -L "https://universe.roboflow.com/ds/g2TEXqVOWz?key=vj45X0pWsn" > roboflow.zip; unzip roboflow.zip; rm roboflow.zip
 
-# Armadillo (390 images) - https://universe.roboflow.com/yolo-emqrl/pangolin
+# Cat 
+curl -L "https://universe.roboflow.com/ds/uRX8CEcWdM?key=uNSsg7hkUc" > roboflow.zip; unzip roboflow.zip; rm roboflow.zip
+
+# Cat (166 images) https://universe.roboflow.com/cat-coco-images/cat-coco/dataset/1/download/yolov8
 
 !pip install roboflow
 
 from roboflow import Roboflow
 rf = Roboflow(api_key="fAGoBAjyntbA5qqOiBmw")
-project = rf.workspace("yolo-emqrl").project("pangolin")
-version = project.version(6)
+project = rf.workspace("cat-coco-images").project("cat-coco")
+version = project.version(1)
 dataset = version.download("yolov8")
+                
+curl -L "https://universe.roboflow.com/ds/Kmr1hMYxjc?key=MvUFNYThf3" > roboflow.zip; unzip roboflow.zip; rm roboflow.zip
 
-curl -L "https://universe.roboflow.com/ds/BQ2kDCuVmg?key=olSDXvfJOn" > roboflow.zip; unzip roboflow.zip; rm roboflow.zip
+# Dog 
+
+curl -L "https://universe.roboflow.com/ds/Onfj1F481G?key=JoW2uui0cI" > roboflow.zip; unzip roboflow.zip; rm roboflow.zip
+
+# Dog https://universe.roboflow.com/bebokute/dog-detection-ccky1/dataset/1/download/yolov8
+
+!pip install roboflow
+
+from roboflow import Roboflow
+rf = Roboflow(api_key="fAGoBAjyntbA5qqOiBmw")
+project = rf.workspace("bebokute").project("dog-detection-ccky1")
+version = project.version(1)
+dataset = version.download("yolov8")
+                
+curl -L "https://universe.roboflow.com/ds/Q4qc1CBObs?key=lZAs9Mz9R5" > roboflow.zip; unzip roboflow.zip; rm roboflow.zip

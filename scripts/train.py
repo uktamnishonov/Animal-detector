@@ -5,6 +5,26 @@ import wandb
 from pathlib import Path
 import shutil
 import re
+import ssl
+import urllib.request
+
+
+def download_yolo_model():
+    # Disable SSL verification (only for downloading the model)
+    ssl._create_default_https_context = ssl._create_unverified_context
+
+    model_url = (
+        "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolov8n.pt"
+    )
+    model_path = "yolov8n.pt"
+
+    if not os.path.exists(model_path):
+        print(f"Downloading YOLOv8n model from {model_url}")
+        urllib.request.urlretrieve(model_url, model_path)
+        print("Model downloaded successfully!")
+    else:
+        print("Model already exists!")
+    return model_path
 
 
 def get_next_run_index():
@@ -33,6 +53,9 @@ def get_models_path():
 
 
 def train_model():
+    # Download/verify model exists before training
+    model_path = download_yolo_model()
+
     # Initialize wandb
     wandb_run = wandb.init(project="animal-detector", name="yolov8n_training_efficient")
 
@@ -40,8 +63,8 @@ def train_model():
     run_index = get_next_run_index()
     run_name = f"run-{run_index}"
 
-    # Load the YOLOv8n model
-    model = YOLO("yolov8n.pt")
+    # Load the YOLOv8n model from downloaded path
+    model = YOLO(model_path)
 
     # Determine device (use GPU if available)
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -68,7 +91,6 @@ def train_model():
         "close_mosaic": 5,  # Disable mosaic in final epochs
         "save": True,  # Save checkpoints
         "save_period": -1,  # Disable periodic saving
-        "save_model_only_best": True,  # Save only best model
     }
 
     # Start training with W&B integration

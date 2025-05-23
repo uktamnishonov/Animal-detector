@@ -139,3 +139,16 @@ version = project.version(1)
 dataset = version.download("yolov8")
                 
 curl -L "https://universe.roboflow.com/ds/Q4qc1CBObs?key=lZAs9Mz9R5" > roboflow.zip; unzip roboflow.zip; rm roboflow.zip
+
+
+# Big Data with 3k images - https://universe.roboflow.com/grant-lja6y/animalsonroad/dataset/2/download/yolov8
+
+!pip install roboflow
+
+from roboflow import Roboflow
+rf = Roboflow(api_key="fAGoBAjyntbA5qqOiBmw")
+project = rf.workspace("grant-lja6y").project("animalsonroad")
+version = project.version(2)
+dataset = version.download("yolov8")
+                
+curl -L "https://universe.roboflow.com/ds/8j0QSafOFN?key=wTGo3jXLVg" > roboflow.zip; unzip roboflow.zip; rm roboflow.zip

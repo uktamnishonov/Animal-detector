@@ -43,6 +43,8 @@ Thumbs.db
 capstoneenv/
 animal-dataset-yolo/
 animal-dataset/
+test/
+dataset-2/
 
 *.jpg
 *.txt

@@ -1,7 +1,6 @@
 from ultralytics import YOLO
 import os
 import torch
-import wandb
 from pathlib import Path
 import shutil
 import re
@@ -52,12 +51,23 @@ def get_models_path():
     return models_dir
 
 
+def check_gpu_memory():
+    if torch.cuda.is_available():
+        print(
+            f"GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB"
+        )
+        print(
+            f"GPU Memory Available: {(torch.cuda.get_device_properties(0).total_memory - torch.cuda.memory_allocated()) / 1e9:.2f} GB"
+        )
+
+
 def train_model():
+    # Disable wandb completely
+    os.environ["WANDB_DISABLED"] = "true"
+    os.environ["WANDB_MODE"] = "disabled"
+
     # Download/verify model exists before training
     model_path = download_yolo_model()
-
-    # Initialize wandb
-    wandb_run = wandb.init(project="animal-detector", name="yolov8n_training_efficient")
 
     # Get next run index and create run directory name
     run_index = get_next_run_index()
@@ -70,41 +80,63 @@ def train_model():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {device}")
 
-    # Define training arguments with reduced resource usage
+    if device == "cuda":
+        check_gpu_memory()
+
+    # Maximum performance training arguments
     args = {
-        "data": "animal-dataset-yolo/data.yaml",  # Path to dataset
-        "epochs": 40,  # Reduced epochs
-        "imgsz": 640,  # Image size
-        "batch": 16 if device == "cuda" else 4,  # Reduced batch size
-        "device": device,  # Device
-        "workers": 4 if device == "cuda" else 2,  # Reduced workers
-        "project": "runs/train",  # Project directory
-        "name": run_name,  # Use indexed run name
-        "exist_ok": True,  # Overwrite existing experiment
-        "pretrained": True,  # Use pretrained weights
-        "optimizer": "Adam",  # Optimizer
-        "lr0": 0.001,  # Initial learning rate
-        "weight_decay": 0.0005,  # Weight decay
-        "patience": 10,  # Early stopping patience
-        "cache": False,  # Disable caching to save RAM
-        "verbose": True,  # Show verbose output
-        "close_mosaic": 5,  # Disable mosaic in final epochs
-        "save": True,  # Save checkpoints
-        "save_period": -1,  # Disable periodic saving
+        "data": "animal-dataset-yolo/data.yaml",
+        "epochs": 100,  # Maximum epochs for best convergence
+        "imgsz": 640,
+        "batch": 24 if device == "cuda" else 6,
+        "device": device,
+        "workers": 6 if device == "cuda" else 3,
+        "project": "runs/train",
+        "name": run_name,
+        "exist_ok": True,
+        "pretrained": True,
+        # Maximum performance learning parameters
+        "optimizer": "AdamW",
+        "lr0": 0.001,  # Very conservative learning rate for stability
+        "lrf": 0.01,  # Final learning rate (lr0 * lrf)
+        "weight_decay": 0.0005,
+        "momentum": 0.937,
+        # Training schedule for maximum performance
+        "warmup_epochs": 3.0,
+        "warmup_momentum": 0.8,
+        "warmup_bias_lr": 0.1,
+        "patience": 30,  # High patience for maximum convergence
+        # Loss weights fine-tuned for better performance
+        "box": 7.5,  # Box regression loss
+        "cls": 1,  # Classification loss weight
+        "dfl": 1.5,  # Distribution focal loss
+        # Performance and memory optimization
+        "cache": "ram" if device == "cuda" else False,  # Cache to RAM for speed
+        "amp": True,  # Automatic Mixed Precision for faster training
+        "verbose": True,
+        "close_mosaic": 15,  # Disable mosaic in final 15 epochs
+        "save": True,
+        "save_period": 10,  # Save checkpoint every 10 epochs
+        "plots": True,  # Generate all training plots
+        "val": True,  # Validate during training
+        # Maximum performance optimization parameters
+        "cos_lr": True,  # Cosine learning rate schedule for better convergence
+        "dropout": 0.0,  # No dropout
+        "label_smoothing": 0.1,  # Label smoothing for better generalization
     }
 
-    # Start training with W&B integration
+    # Start training
     try:
-        # Enable W&B logging
-        os.environ["WANDB_PROJECT"] = "animal-detector"
-
         # Set the save directory path with indexed name
         save_dir = Path("runs/train") / run_name
+        print(f"Training will be saved to: {save_dir}")
 
         # Train the model
+        print("Starting training...")
         results = model.train(**args)
 
         print("\nTraining completed successfully!")
+        print(f"Results saved in: {save_dir}")
 
         # Save best model with index
         models_dir = get_models_path()
@@ -118,11 +150,38 @@ def train_model():
         else:
             print(f"Best model not found at {best_model_path}")
 
-        # Evaluate the model
+        # Display final results
+        print("\n" + "=" * 50)
+        print("TRAINING SUMMARY")
+        print("=" * 50)
+
+        # Load and display metrics from results.csv if available
+        results_csv = save_dir / "results.csv"
+        if results_csv.exists():
+            import pandas as pd
+
+            df = pd.read_csv(results_csv)
+            if not df.empty:
+                final_metrics = df.iloc[-1]
+                print(
+                    f"Final mAP50: {final_metrics.get('metrics/mAP50(B)', 'N/A'):.5f}"
+                )
+                print(
+                    f"Final mAP50-95: {final_metrics.get('metrics/mAP50-95(B)', 'N/A'):.5f}"
+                )
+                print(
+                    f"Final Box Loss: {final_metrics.get('train/box_loss', 'N/A'):.5f}"
+                )
+                print(
+                    f"Final Class Loss: {final_metrics.get('train/cls_loss', 'N/A'):.5f}"
+                )
+
+        # Evaluate the model on validation set
+        print("\nRunning final validation...")
         val_results = model.val()
 
         # Export model to ONNX format
-        print("Exporting model to ONNX format...")
+        print("\nExporting model to ONNX format...")
         try:
             onnx_path = models_dir / f"best-{run_index}.onnx"
             model.export(format="onnx", imgsz=640)
@@ -136,7 +195,12 @@ def train_model():
         except Exception as export_error:
             print(f"Error exporting to ONNX: {str(export_error)}")
 
-        print("\nTo continue training from this checkpoint, you can run:")
+        print("\n" + "=" * 50)
+        print("TRAINING COMPLETED SUCCESSFULLY!")
+        print("=" * 50)
+        print(f"Best model: models/{best_model_name}")
+        print(f"Training logs: {save_dir}")
+        print("\nTo continue training from this checkpoint:")
         print(f"model = YOLO('models/{best_model_name}')")
         print("model.train(resume=True)")
 
@@ -147,9 +211,6 @@ def train_model():
     except Exception as e:
         print(f"\nAn error occurred: {str(e)}")
         print("Check the error message above and adjust parameters if needed.")
-    finally:
-        # Always close wandb run
-        wandb.finish()
 
 
 if __name__ == "__main__":

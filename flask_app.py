@@ -1,21 +1,28 @@
-import io
-import picamera
+import cv2
 from flask import Flask, Response
 
 app = Flask(__name__)
 
 def generate_frames():
-    with picamera.PiCamera() as camera:
-        camera.resolution = (640, 480)
-        camera.framerate = 24
-        stream = io.BytesIO()
+    cap = cv2.VideoCapture(0)  # Use 0 for default camera (USB or V4L2 Pi Camera)
 
-        for _ in camera.capture_continuous(stream, 'jpeg', use_video_port=True):
-            stream.seek(0)
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + stream.read() + b'\r\n')
-            stream.seek(0)
-            stream.truncate()
+    if not cap.isOpened():
+        raise RuntimeError("Could not open camera.")
+
+    while True:
+        success, frame = cap.read()
+        if not success:
+            break
+
+        # Encode frame as JPEG
+        ret, buffer = cv2.imencode('.jpg', frame)
+        frame_bytes = buffer.tobytes()
+
+        # Yield in HTTP multipart format
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+
+    cap.release()
 
 @app.route('/video-feed')
 def video_feed():

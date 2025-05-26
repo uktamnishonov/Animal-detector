@@ -2,30 +2,54 @@ import cv2
 import socket
 import struct
 import pickle
+import time
 
-# Setup camera
+server_ip = 'YOUR_LAPTOP_IP'  # Replace this
+server_port = 9999
+
+def connect_to_receiver():
+    while True:
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.connect((server_ip, server_port))
+            print("Connected to receiver.")
+            return s
+        except:
+            print("Receiver not available, retrying in 3 seconds...")
+            time.sleep(3)
+
 cap = cv2.VideoCapture(0)
 
-# Setup socket
-server_ip = 'YOUR_LAPTOP_IP'  # Replace with your laptop's local IP
-server_port = 9999
-client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-client_socket.connect((server_ip, server_port))
-connection = client_socket.makefile('wb')
+while True:
+    sock = connect_to_receiver()
+    try:
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
 
-try:
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
+            data = pickle.dumps(frame)
+            message = struct.pack("L", len(data)) + data
+            sock.sendall(message)
 
-        # Serialize frame
-        data = pickle.dumps(frame)
-        # Send size first
-        client_socket.sendall(struct.pack("L", len(data)) + data)
+    except Exception as e:
+        print(f"Connection lost: {e}")
+        sock.close()
+        print("Reconnecting...")
+        time.sleep(2)
 
-except KeyboardInterrupt:
-    pass
-finally:
-    cap.release()
-    client_socket.close()
+
+'''
+[Unit]
+Description=Video Stream Sender to Laptop
+After=network.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/Desktop/capstone
+ExecStart=/home/ubuntu/capstone/bin/python /home/ubuntu/Desktop/capstone/send_video.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+'''

@@ -21,41 +21,87 @@ def connect_to_streamlit():
             print("Retrying in 3 seconds...")
             time.sleep(3)
 
-# Initialize camera (using your working method)
-cap = cv2.VideoCapture(0)
+def initialize_camera():
+    """Initialize camera with error checking"""
+    print("Initializing camera...")
+    cap = cv2.VideoCapture(0)
+    
+    if not cap.isOpened():
+        print("Error: Could not open camera")
+        return None
+    
+    # Set camera properties
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    cap.set(cv2.CAP_PROP_FPS, 20)
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce buffer
+    
+    # Test if we can actually capture a frame
+    ret, frame = cap.read()
+    if not ret:
+        print("Error: Camera opened but cannot capture frames")
+        cap.release()
+        return None
+    
+    print(f"Camera initialized successfully - Frame shape: {frame.shape}")
+    return cap
 
-# Optional: Set camera properties for better performance
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-cap.set(cv2.CAP_PROP_FPS, 20)
-
-print("Camera initialized successfully")
-
+# Main streaming loop
 while True:
+    # Initialize camera for each connection cycle
+    cap = initialize_camera()
+    if cap is None:
+        print("Camera initialization failed, retrying in 5 seconds...")
+        time.sleep(5)
+        continue
+    
+    # Connect to Streamlit
     sock = connect_to_streamlit()
+    
     try:
+        frame_count = 0
         while True:
             ret, frame = cap.read()
             if not ret:
-                print("Failed to capture frame")
-                break
+                print(f"Failed to capture frame (frame #{frame_count})")
+                # Try to reinitialize camera
+                cap.release()
+                time.sleep(1)
+                cap = initialize_camera()
+                if cap is None:
+                    print("Camera reinitialization failed")
+                    break
+                continue
+
+            frame_count += 1
+            if frame_count % 100 == 0:  # Progress indicator
+                print(f"Streamed {frame_count} frames")
 
             # Serialize and send frame
-            data = pickle.dumps(frame)
-            message = struct.pack("L", len(data)) + data
-            sock.sendall(message)
+            try:
+                data = pickle.dumps(frame)
+                message = struct.pack("L", len(data)) + data
+                sock.sendall(message)
+            except BrokenPipeError:
+                print("Connection broken")
+                break
+            except Exception as e:
+                print(f"Send error: {e}")
+                break
             
             # Small delay to control frame rate
             time.sleep(0.05)  # ~20 FPS
 
     except Exception as e:
         print(f"Connection lost: {e}")
+    finally:
         sock.close()
+        cap.release()
         print("Reconnecting in 2 seconds...")
         time.sleep(2)
 
-# Cleanup (this won't be reached due to infinite loop, but good practice)
-cap.release()
+# Cleanup (won't be reached due to infinite loop, but good practice)
+print("Shutting down...")
 cv2.destroyAllWindows()
 
 

@@ -47,6 +47,8 @@ test/
 dataset-2/
 
 *.jpg
+*.jpeg
 *.txt
+*.mp4
 uktamnishonov
 uktamnishonov.pub

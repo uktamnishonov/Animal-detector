@@ -1,0 +1,8 @@
+authtoken: 2xdiIAAY1fJ2NEJ6OhW8n3do37I_2FKBj4oPKPeF7eZqjEcko
+
+version: 2
+
+tunnels:
+  raspicam:
+    proto: tcp
+    addr: 9999

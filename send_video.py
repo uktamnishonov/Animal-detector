@@ -1,183 +1,209 @@
-#!/usr/bin/env python3
-"""
-Raspberry Pi Camera Test Script
-Run this first to check if your camera is working
-"""
-
 import cv2
-import os
-import subprocess
+import socket
+import struct
+import pickle
+import time
 
-def check_camera_devices():
-    """Check for available camera devices"""
-    print("=== Checking Camera Devices ===")
+# Replace with your laptop's IP address where Streamlit is running
+LAPTOP_IP = 'YOUR_LAPTOP_IP'  # e.g., '192.168.1.100'
+LAPTOP_PORT = 9999
+
+def connect_to_streamlit():
+    """Connect to the Streamlit app"""
+    while True:
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.connect((LAPTOP_IP, LAPTOP_PORT))
+            print(f"Connected to Streamlit app at {LAPTOP_IP}:{LAPTOP_PORT}")
+            return s
+        except Exception as e:
+            print(f"Streamlit app not available: {e}")
+            print("Retrying in 3 seconds...")
+            time.sleep(3)
+
+def find_usb_camera():
+    """Find available USB camera"""
+    print("Searching for USB cameras...")
     
-    # Check /dev/video* devices
+    # Check what video devices exist
+    import os
     video_devices = []
     for i in range(10):
-        device = f"/dev/video{i}"
-        if os.path.exists(device):
-            video_devices.append(device)
-            print(f"Found device: {device}")
+        device_path = f"/dev/video{i}"
+        if os.path.exists(device_path):
+            video_devices.append(i)
+            print(f"Found video device: {device_path}")
     
     if not video_devices:
         print("No /dev/video* devices found")
+        print("Check if USB camera is connected: lsusb")
+        return None
     
-    return video_devices
-
-def check_camera_modules():
-    """Check if camera modules are loaded"""
-    print("\n=== Checking Camera Modules ===")
-    
-    try:
-        result = subprocess.run(['lsmod'], capture_output=True, text=True)
-        modules = result.stdout
+    # Try each video device with different methods
+    for index in video_devices:
+        print(f"Testing video device {index}...")
         
-        camera_modules = ['bcm2835_v4l2', 'uvcvideo', 'videodev']
-        for module in camera_modules:
-            if module in modules:
-                print(f"✓ {module} module is loaded")
-            else:
-                print(f"✗ {module} module is NOT loaded")
-    except Exception as e:
-        print(f"Error checking modules: {e}")
-
-def test_opencv_camera():
-    """Test OpenCV camera access"""
-    print("\n=== Testing OpenCV Camera Access ===")
-    
-    # Test different camera indices
-    for i in range(5):
-        print(f"Testing camera index {i}...")
-        cap = cv2.VideoCapture(i)
+        # Method 1: Default OpenCV
+        try:
+            cap = cv2.VideoCapture(index)
+            if cap.isOpened():
+                # Try to read a frame to make sure it really works
+                ret, frame = cap.read()
+                if ret and frame is not None:
+                    print(f"✓ USB camera found at index {index} (default method)")
+                    cap.release()
+                    return index, None
+                else:
+                    print(f"  Camera {index} opens but can't read frames")
+            cap.release()
+        except Exception as e:
+            print(f"  Error with default method: {e}")
         
-        if cap.isOpened():
-            print(f"✓ Camera {i} opened successfully")
-            
-            # Try to read a frame
-            ret, frame = cap.read()
-            if ret:
-                print(f"  ✓ Successfully captured frame: {frame.shape}")
-                
-                # Test a few more frames
-                for j in range(3):
-                    ret, frame = cap.read()
-                    if ret:
-                        print(f"  ✓ Frame {j+2}: {frame.shape}")
-                    else:
-                        print(f"  ✗ Failed to capture frame {j+2}")
-                        break
-            else:
-                print(f"  ✗ Failed to capture frame from camera {i}")
-            
+        # Method 2: V4L2 backend (most common for USB cameras on Linux)
+        try:
+            cap = cv2.VideoCapture(index, cv2.CAP_V4L2)
+            if cap.isOpened():
+                ret, frame = cap.read()
+                if ret and frame is not None:
+                    print(f"✓ USB camera found at index {index} (V4L2 backend)")
+                    cap.release()
+                    return index, cv2.CAP_V4L2
+                else:
+                    print(f"  Camera {index} with V4L2 opens but can't read frames")
             cap.release()
-            return i  # Return working camera index
-        else:
-            print(f"✗ Camera {i} failed to open")
+        except Exception as e:
+            print(f"  Error with V4L2 backend: {e}")
+    
+    # If nothing worked, try forcing common indices
+    print("Trying common camera indices...")
+    common_indices = [0, 1, 2]
+    for index in common_indices:
+        try:
+            cap = cv2.VideoCapture(index, cv2.CAP_V4L2)
+            if cap.isOpened():
+                ret, frame = cap.read()
+                if ret and frame is not None:
+                    print(f"✓ Found working camera at index {index} (forced)")
+                    cap.release()
+                    return index, cv2.CAP_V4L2
             cap.release()
+        except:
+            continue
     
     return None
 
-def test_with_backends():
-    """Test with different OpenCV backends"""
-    print("\n=== Testing Different Backends ===")
+def initialize_camera():
+    """Initialize USB camera with proper settings"""
+    camera_info = find_usb_camera()
     
-    backends = [
-        (cv2.CAP_V4L2, "V4L2"),
-        (cv2.CAP_GSTREAMER, "GStreamer"),
-        (cv2.CAP_FFMPEG, "FFmpeg"),
-    ]
+    if camera_info is None:
+        print("No USB camera found!")
+        print("Troubleshooting steps:")
+        print("1. Check if camera is connected: lsusb")
+        print("2. Check video devices: ls -la /dev/video*")
+        print("3. Try different USB ports")
+        print("4. Check if camera works with other software: cheese, vlc, etc.")
+        return None
     
-    for backend_id, backend_name in backends:
-        print(f"Testing {backend_name} backend...")
-        for i in range(3):
-            try:
-                cap = cv2.VideoCapture(i, backend_id)
-                if cap.isOpened():
-                    ret, frame = cap.read()
-                    if ret:
-                        print(f"  ✓ {backend_name} camera {i} works: {frame.shape}")
-                        cap.release()
-                        return i, backend_id
-                    else:
-                        print(f"  ✗ {backend_name} camera {i} opened but no frame")
-                cap.release()
-            except Exception as e:
-                print(f"  ✗ {backend_name} camera {i} error: {e}")
+    # Handle different return types from find_usb_camera
+    if isinstance(camera_info, tuple):
+        index, backend = camera_info
+        if backend is not None:
+            cap = cv2.VideoCapture(index, backend)
+            print(f"Using camera {index} with backend {backend}")
+        else:
+            cap = cv2.VideoCapture(index)
+            print(f"Using camera {index} with default backend")
+    else:
+        index = camera_info
+        cap = cv2.VideoCapture(index)
+        print(f"Using camera {index}")
     
-    return None, None
-
-def show_system_info():
-    """Show system information"""
-    print("\n=== System Information ===")
+    if not cap.isOpened():
+        print(f"Failed to open camera at index {index}")
+        return None
     
+    # Set camera properties (some USB cameras might not support all properties)
+    print("Setting camera properties...")
+    
+    # Try to set properties, but don't fail if they're not supported
     try:
-        # Check if we're on Raspberry Pi
-        with open('/proc/cpuinfo', 'r') as f:
-            cpuinfo = f.read()
-            if 'BCM' in cpuinfo or 'Raspberry Pi' in cpuinfo:
-                print("✓ Running on Raspberry Pi")
-            else:
-                print("? Not detected as Raspberry Pi")
-    except:
-        print("? Could not determine if running on Raspberry Pi")
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        cap.set(cv2.CAP_PROP_FPS, 30)
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce buffer to minimize latency
+    except Exception as e:
+        print(f"Warning: Could not set some camera properties: {e}")
     
-    # Check OpenCV version
-    print(f"OpenCV version: {cv2.__version__}")
+    # Test frame capture
+    print("Testing frame capture...")
+    ret, frame = cap.read()
+    if not ret or frame is None:
+        print("Error: Cannot capture frames from camera")
+        cap.release()
+        return None
     
-    # Check available camera backends
-    print("Available backends:")
-    backends = [
-        (cv2.CAP_V4L2, "V4L2"),
-        (cv2.CAP_GSTREAMER, "GStreamer"), 
-        (cv2.CAP_FFMPEG, "FFmpeg"),
-    ]
+    # Get actual settings
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps = cap.get(cv2.CAP_PROP_FPS)
     
-    for backend_id, name in backends:
-        try:
-            # Just try to create a VideoCapture with the backend
-            cap = cv2.VideoCapture()
-            if cap.open(0, backend_id):
-                print(f"  ✓ {name}")
-                cap.release()
-            else:
-                print(f"  ✗ {name}")
-        except:
-            print(f"  ✗ {name}")
+    print(f"USB Camera initialized successfully:")
+    print(f"  Resolution: {width}x{height}")
+    print(f"  FPS: {fps}")
+    print(f"  Frame shape: {frame.shape}")
+    
+    return cap
 
 def main():
-    print("Raspberry Pi Camera Diagnostic Tool")
-    print("=" * 50)
+    # Initialize camera
+    cap = initialize_camera()
+    if cap is None:
+        return
     
-    show_system_info()
-    check_camera_devices()
-    check_camera_modules()
-    
-    # Test basic OpenCV access
-    working_index = test_opencv_camera()
-    
-    if working_index is not None:
-        print(f"\n🎉 SUCCESS: Camera {working_index} is working!")
-        print(f"Use this in your code: cv2.VideoCapture({working_index})")
-    else:
-        print("\n❌ No working camera found with basic method")
-        print("Trying different backends...")
-        
-        working_index, backend = test_with_backends()
-        if working_index is not None:
-            print(f"\n🎉 SUCCESS: Camera {working_index} works with backend {backend}")
-            print(f"Use this in your code: cv2.VideoCapture({working_index}, {backend})")
-        else:
-            print("\n❌ No camera found with any method")
-            print("\nTroubleshooting steps:")
-            print("1. Enable camera: sudo raspi-config -> Interface Options -> Camera")
-            print("2. Load camera module: sudo modprobe bcm2835-v4l2")
-            print("3. Check connection: ls -la /dev/video*")
-            print("4. Reboot: sudo reboot")
-            print("5. For USB cameras: Check lsusb output")
+    while True:
+        sock = connect_to_streamlit()
+        try:
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    print("Failed to capture frame")
+                    break
+
+                # Optional: resize frame to reduce bandwidth
+                # frame = cv2.resize(frame, (640, 480))
+                
+                # Serialize frame
+                data = pickle.dumps(frame)
+                message = struct.pack("L", len(data)) + data
+                
+                try:
+                    sock.sendall(message)
+                except BrokenPipeError:
+                    print("Connection broken, reconnecting...")
+                    break
+                except Exception as e:
+                    print(f"Send error: {e}")
+                    break
+                    
+                # Small delay to control frame rate
+                time.sleep(0.05)  # ~20 FPS
+
+        except Exception as e:
+            print(f"Connection lost: {e}")
+        finally:
+            sock.close()
+            print("Reconnecting in 2 seconds...")
+            time.sleep(2)
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nShutting down camera stream...")
+    finally:
+        cv2.destroyAllWindows()
+
 
 '''
 [Unit]

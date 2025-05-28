@@ -31,9 +31,9 @@ def initialize_camera():
         return None
     
     # Set camera properties
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-    cap.set(cv2.CAP_PROP_FPS, 20)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+    cap.set(cv2.CAP_PROP_FPS, 25)
     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce buffer
     
     # Test if we can actually capture a frame

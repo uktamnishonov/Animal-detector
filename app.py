@@ -16,6 +16,9 @@ import struct
 import pickle
 import threading
 from queue import Queue
+import atexit
+import psutil
+import signal
 
 # Configuration
 MODEL_PATH = "models/best-13.pt"
@@ -55,7 +58,7 @@ st.markdown(
 )
 
 
-# Initialize session state
+# Enhanced session state initialization
 def init_session_state():
     defaults = {
         "socket_connected": False,
@@ -63,9 +66,10 @@ def init_session_state():
         "socket_thread": None,
         "stop_streaming": False,
         "model": None,
-        "current_mode": None,  # Track current mode to prevent duplicate buttons
-        "last_uploaded_image": None,  # Store uploaded image for re-detection
-        "stream_active": False,  # Track if stream is actively running
+        "current_mode": None,
+        "last_uploaded_image": None,
+        "stream_active": False,
+        "stop_event": None,  # Add this
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -86,80 +90,266 @@ def load_model():
         return None
 
 
-# Socket receiver for Raspberry Pi stream
+# Enhanced socket receiver with better connection stability
 def socket_receiver(frame_queue, stop_event):
-    """Receive frames from Raspberry Pi via socket"""
+    """Receive frames from Raspberry Pi via socket with improved stability"""
     server_socket = None
     conn = None
+    reconnect_count = 0
 
     try:
+        # Create socket with proper options
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        server_socket.bind(("0.0.0.0", SOCKET_PORT))
+
+        # Set socket to non-blocking mode for better control
+        server_socket.settimeout(1.0)
+
+        try:
+            server_socket.bind(("0.0.0.0", SOCKET_PORT))
+        except OSError as e:
+            if e.errno == 48:
+                print(f"Port {SOCKET_PORT} is busy. Waiting for it to be freed...")
+                time.sleep(3)
+                try:
+                    server_socket.bind(("0.0.0.0", SOCKET_PORT))
+                except OSError:
+                    print(
+                        f"Could not bind to port {SOCKET_PORT}. Trying alternative port..."
+                    )
+                    # Try a few alternative ports
+                    for alt_port in range(SOCKET_PORT + 1, SOCKET_PORT + 10):
+                        try:
+                            server_socket.bind(("0.0.0.0", alt_port))
+                            print(f"Using alternative port: {alt_port}")
+                            break
+                        except OSError:
+                            continue
+                    else:
+                        raise Exception("No available ports found")
+            else:
+                raise e
+
         server_socket.listen(1)
+        bound_port = server_socket.getsockname()[1]
+        print(f"Socket server listening on port {bound_port}")
 
         while not stop_event.is_set():
             try:
-                server_socket.settimeout(1.0)
+                # Accept connection with timeout
                 conn, addr = server_socket.accept()
+                reconnect_count += 1
+                print(f"Connection #{reconnect_count} established with {addr}")
 
+                # Set connection timeout
+                conn.settimeout(5.0)
+
+                # Connection handling with better error recovery
                 data = b""
                 payload_size = struct.calcsize("L")
+                consecutive_errors = 0
+                frames_received = 0
 
                 while not stop_event.is_set():
                     try:
-                        # Receive payload size
-                        while len(data) < payload_size:
-                            packet = conn.recv(4096)
-                            if not packet:
-                                raise ConnectionError("Connection lost")
-                            data += packet
+                        # Receive payload size with timeout handling
+                        while len(data) < payload_size and not stop_event.is_set():
+                            try:
+                                packet = conn.recv(4096)
+                                if not packet:
+                                    raise ConnectionError("No data received")
+                                data += packet
+                                consecutive_errors = (
+                                    0  # Reset error count on successful receive
+                                )
+                            except socket.timeout:
+                                # Check if we should continue waiting
+                                if consecutive_errors < 3:
+                                    consecutive_errors += 1
+                                    continue
+                                else:
+                                    raise ConnectionError("Timeout receiving data")
 
-                        # Extract and receive frame
+                        if len(data) < payload_size:
+                            break  # Stop event was set
+
+                        # Extract message size
                         msg_size = struct.unpack("L", data[:payload_size])[0]
+
+                        # Validate message size (prevent memory issues)
+                        if msg_size > 10 * 1024 * 1024:  # 10MB limit
+                            print(f"Warning: Large message size {msg_size}, skipping")
+                            data = b""
+                            continue
+
                         data = data[payload_size:]
 
-                        while len(data) < msg_size:
-                            packet = conn.recv(4096)
-                            if not packet:
-                                raise ConnectionError("Connection lost")
-                            data += packet
+                        # Receive frame data
+                        while len(data) < msg_size and not stop_event.is_set():
+                            try:
+                                remaining = msg_size - len(data)
+                                packet = conn.recv(min(4096, remaining))
+                                if not packet:
+                                    raise ConnectionError(
+                                        "Connection lost during frame receive"
+                                    )
+                                data += packet
+                            except socket.timeout:
+                                if consecutive_errors < 3:
+                                    consecutive_errors += 1
+                                    continue
+                                else:
+                                    raise ConnectionError(
+                                        "Timeout receiving frame data"
+                                    )
+
+                        if len(data) < msg_size:
+                            break  # Stop event was set
 
                         # Process frame
-                        frame = pickle.loads(data[:msg_size])
-                        data = data[msg_size:]
+                        try:
+                            frame_data = data[:msg_size]
+                            frame = pickle.loads(frame_data)
+                            data = data[msg_size:]
 
-                        # Add to queue (replace old frames if full)
-                        if frame_queue.full():
-                            try:
-                                frame_queue.get(block=False)
-                            except:
-                                pass
-                        frame_queue.put(frame, block=False)
+                            # Validate frame
+                            if isinstance(frame, np.ndarray) and frame.size > 0:
+                                frames_received += 1
 
-                    except ConnectionError:
+                                # Add to queue (non-blocking)
+                                try:
+                                    if frame_queue.full():
+                                        frame_queue.get_nowait()  # Remove oldest frame
+                                    frame_queue.put_nowait(frame)
+                                except:
+                                    pass  # Queue operations failed, continue
+
+                                # Log progress periodically
+                                if frames_received % 100 == 0:
+                                    print(
+                                        f"Received {frames_received} frames from {addr}"
+                                    )
+                            else:
+                                print("Warning: Invalid frame received")
+
+                        except (pickle.UnpicklingError, TypeError) as e:
+                            print(f"Frame unpickling error: {e}")
+                            data = b""  # Reset buffer on unpickling error
+                            continue
+
+                    except ConnectionError as e:
+                        print(f"Connection error: {e}")
                         break
                     except Exception as e:
-                        print(f"Frame error: {e}")
-                        break
+                        print(f"Unexpected error: {e}")
+                        consecutive_errors += 1
+                        if consecutive_errors > 5:
+                            print("Too many consecutive errors, dropping connection")
+                            break
+
+                print(
+                    f"Connection with {addr} ended. Received {frames_received} frames total."
+                )
 
             except socket.timeout:
+                # Normal timeout, continue listening
                 continue
             except Exception as e:
-                print(f"Connection error: {e}")
-                time.sleep(2)
+                print(f"Accept error: {e}")
+                time.sleep(1)  # Brief pause before retrying
             finally:
                 if conn:
-                    conn.close()
+                    try:
+                        conn.close()
+                    except:
+                        pass
                     conn = None
 
     except Exception as e:
-        print(f"Socket error: {e}")
+        print(f"Socket server error: {e}")
     finally:
+        # Cleanup
         if conn:
-            conn.close()
+            try:
+                conn.close()
+            except:
+                pass
         if server_socket:
-            server_socket.close()
+            try:
+                server_socket.close()
+            except:
+                pass
+        print("Socket server cleaned up")
+
+
+def kill_process_on_port(port):
+    """Kill any process using the specified port - Fixed version"""
+    try:
+        import psutil
+
+        killed = False
+        for proc in psutil.process_iter(["pid", "name"]):
+            try:
+                # Use net_connections() instead of deprecated connections()
+                for conn in proc.net_connections():
+                    if (
+                        hasattr(conn, "laddr")
+                        and conn.laddr
+                        and conn.laddr.port == port
+                    ):
+                        print(
+                            f"Found process {proc.info['pid']} ({proc.info['name']}) using port {port}"
+                        )
+                        try:
+                            proc.terminate()  # Try graceful termination first
+                            proc.wait(timeout=3)  # Wait up to 3 seconds
+                            killed = True
+                        except psutil.TimeoutExpired:
+                            proc.kill()  # Force kill if graceful termination fails
+                            killed = True
+                        except psutil.AccessDenied:
+                            print(
+                                f"Access denied when trying to kill process {proc.info['pid']}"
+                            )
+                        break
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                pass
+        return killed
+    except Exception as e:
+        print(f"Error killing process on port {port}: {e}")
+        return False
+
+
+def find_available_port(start_port=9999, max_attempts=10):
+    """Find an available port starting from start_port"""
+    for port in range(start_port, start_port + max_attempts):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            sock.bind(("0.0.0.0", port))
+            sock.close()
+            return port
+        except OSError:
+            continue
+    return None
+
+
+def cleanup_socket_resources():
+    """Improved cleanup function"""
+    try:
+        if hasattr(st.session_state, "stop_event") and st.session_state.stop_event:
+            st.session_state.stop_event.set()
+
+        if (
+            hasattr(st.session_state, "socket_thread")
+            and st.session_state.socket_thread
+        ):
+            if st.session_state.socket_thread.is_alive():
+                st.session_state.socket_thread.join(timeout=5)
+
+        # Don't automatically kill processes - let them close gracefully
+        print("Socket resources cleaned up")
+    except Exception as e:
+        print(f"Error during cleanup: {e}")
 
 
 # Detection processing
@@ -281,8 +471,29 @@ def detect_objects(model, image, confidence_threshold):
     return predictions
 
 
-def update_detection_info(animal_text, accuracy_text, predictions):
-    """Update detection info display"""
+def calculate_distance_warning(box, image_shape):
+    """Calculate relative distance based on bounding box size"""
+    image_height, image_width = image_shape[:2]
+    x1, y1, x2, y2 = box
+    box_width = x2 - x1
+    box_height = y2 - y1
+
+    # Calculate box area relative to image area
+    box_area = box_width * box_height
+    image_area = image_width * image_height
+    area_ratio = box_area / image_area
+
+    # Define threshold for "close" objects (adjust as needed)
+    CLOSE_THRESHOLD = 0.15  # 15% of image area
+
+    if area_ratio > CLOSE_THRESHOLD:
+        return "Object is too close, stop the car", True
+    else:
+        return "Caution! Object detected in front of the car", False
+
+
+def update_detection_info(animal_text, accuracy_text, predictions, image_shape=None):
+    """Update detection info display with distance warning"""
     if predictions:
         animal_text.write(f"Detected: {predictions[0]['label']}")
         accuracy_text.write(f"Accuracy: {predictions[0]['score']:.2f}%")
@@ -336,6 +547,29 @@ def main():
         confidence_threshold = st.slider(
             "Confidence Threshold", 0.1, 1.0, 0.3, 0.05, key="confidence_slider"
         )
+
+        # Add warning text section
+        st.markdown("### Distance Warning")
+        warning_text = st.empty()
+
+        # Update the warning display function to use the new warning_text
+        def update_warning(predictions, image_shape):
+            if predictions and image_shape is not None:
+                warning_msg, is_close = calculate_distance_warning(
+                    predictions[0]["box"], image_shape
+                )
+                warning_color = "red" if is_close else "yellow"
+                warning_text.markdown(
+                    f"<div style='color: {warning_color}; font-weight: bold;'>{warning_msg}</div>",
+                    unsafe_allow_html=True,
+                )
+            else:
+                warning_text.markdown(
+                    "<div style='color: gray;'>No objects detected</div>",
+                    unsafe_allow_html=True,
+                )
+
+        st.session_state.update_warning = update_warning
         st.markdown("</div>", unsafe_allow_html=True)
 
     # Handle different modes without showing duplicate buttons
@@ -367,57 +601,106 @@ def main():
     st.markdown("Animal detection powered by YOLOv8 | Raspberry Pi Camera Stream")
 
 
+# Modified handle_live_camera_content with better connection management
 def handle_live_camera_content(animal_text, accuracy_text, confidence_threshold, model):
-    """Handle live camera stream content only"""
+    """Handle live camera stream with improved connection stability"""
     st.markdown(
         '<span class="red-dot">●</span> <span class="stream-title">Live Stream from Raspberry Pi</span>',
         unsafe_allow_html=True,
     )
 
-    # Start/Stop buttons
-    col_start, col_stop = st.columns([1, 1])
+    # Control buttons
+    col_start, col_stop, col_reset = st.columns([1, 1, 1])
     with col_start:
         start_stream = st.button("Start Stream", key="start_stream")
     with col_stop:
         stop_stream = st.button("Stop Stream", key="stop_stream")
+    with col_reset:
+        reset_connection = st.button("Reset Connection", key="reset_connection")
+
+    # Handle reset connection (more conservative approach)
+    if reset_connection:
+        # Stop current streaming
+        if hasattr(st.session_state, "stop_event") and st.session_state.stop_event:
+            st.session_state.stop_event.set()
+
+        # Wait for thread to finish
+        if (
+            hasattr(st.session_state, "socket_thread")
+            and st.session_state.socket_thread
+        ):
+            if st.session_state.socket_thread.is_alive():
+                st.session_state.socket_thread.join(timeout=3)
+
+        # Clear queue
+        while not st.session_state.frame_queue.empty():
+            try:
+                st.session_state.frame_queue.get_nowait()
+            except:
+                break
+
+        # Reset state
+        st.session_state.socket_connected = False
+        st.session_state.stream_active = False
+        st.session_state.socket_thread = None
+        st.session_state.stop_event = None
+
+        st.success("Connection reset successfully!")
+        time.sleep(1)
+        st.rerun()
 
     # Handle start stream
     if start_stream and not st.session_state.socket_connected:
-        st.session_state.stop_streaming = False
-        if (
-            st.session_state.socket_thread is None
-            or not st.session_state.socket_thread.is_alive()
-        ):
-            stop_event = threading.Event()
-            st.session_state.socket_thread = threading.Thread(
-                target=socket_receiver,
-                args=(st.session_state.frame_queue, stop_event),
-                daemon=True,
-            )
-            st.session_state.socket_thread.start()
-            st.session_state.socket_connected = True
-            st.session_state.stream_active = True
-            st.session_state.stop_event = stop_event
+        try:
+            st.session_state.stop_streaming = False
+
+            if (
+                st.session_state.socket_thread is None
+                or not st.session_state.socket_thread.is_alive()
+            ):
+
+                stop_event = threading.Event()
+                st.session_state.socket_thread = threading.Thread(
+                    target=socket_receiver,
+                    args=(st.session_state.frame_queue, stop_event),
+                    daemon=True,
+                )
+                st.session_state.socket_thread.start()
+                st.session_state.socket_connected = True
+                st.session_state.stream_active = True
+                st.session_state.stop_event = stop_event
+
+                st.success("Stream started! Waiting for Raspberry Pi connection...")
+
+        except Exception as e:
+            st.error(f"Failed to start stream: {e}")
 
     # Handle stop stream
     if stop_stream:
         st.session_state.stop_streaming = True
         st.session_state.stream_active = False
-        if hasattr(st.session_state, "stop_event"):
+        if hasattr(st.session_state, "stop_event") and st.session_state.stop_event:
             st.session_state.stop_event.set()
         st.session_state.socket_connected = False
+        st.success("Stream stopped")
         st.rerun()
 
-    # Status display
+    # Enhanced status display
     status_placeholder = st.empty()
+    connection_info = st.empty()
+
     if st.session_state.socket_connected and st.session_state.stream_active:
-        status_placeholder.success(
-            f"🟢 Socket server running on port {SOCKET_PORT}. Raspberry Pi connected!"
-        )
+        status_placeholder.success(f"🟢 Socket server running on port {SOCKET_PORT}")
+
+        # Check queue size for connection health
+        # queue_size = st.session_state.frame_queue.qsize()
+        # if queue_size > 0:
+        #     connection_info.info(f"📡 Receiving frames - Queue: {queue_size}/10")
+        # else:
+        #     connection_info.warning("⏳ Waiting for frames from Raspberry Pi...")
     else:
-        status_placeholder.info(
-            "🔵 Click 'Start Stream' to begin receiving from Raspberry Pi"
-        )
+        status_placeholder.info("🔵 Click 'Start Stream' to begin")
+        connection_info.empty()
 
     # Video feed
     video_feed = st.empty()
@@ -428,34 +711,64 @@ def handle_live_camera_content(animal_text, accuracy_text, confidence_threshold,
         and st.session_state.stream_active
         and not st.session_state.stop_streaming
     ):
-        frames_received = 0
+
+        frames_processed = 0
         last_detection_time = time.time()
+        last_frame_time = time.time()
 
         while st.session_state.socket_connected and not st.session_state.stop_streaming:
-            if not st.session_state.frame_queue.empty():
-                frame = st.session_state.frame_queue.get(block=False)
-                frames_received += 1
+            try:
+                if not st.session_state.frame_queue.empty():
+                    frame = st.session_state.frame_queue.get(block=False)
+                    frames_processed += 1
+                    last_frame_time = time.time()
 
-                if frames_received % 30 == 0:
-                    status_placeholder.success(
-                        f"🟢 Streaming active - {frames_received} frames received"
-                    )
+                    # Update status every 30 frames
+                    # if frames_processed % 30 == 0:
+                    #     status_placeholder.success(
+                    #         f"🟢 Streaming active - {frames_processed} frames processed"
+                    #     )
 
-                # Run detection with current confidence threshold
-                predictions = detect_objects(model, frame, confidence_threshold)
+                    # Run detection
+                    predictions = detect_objects(model, frame, confidence_threshold)
 
-                if predictions:
-                    frame = draw_detections(frame, predictions)
-                    update_detection_info(animal_text, accuracy_text, predictions)
-                    last_detection_time = time.time()
-                elif time.time() - last_detection_time > 3:
-                    update_detection_info(animal_text, accuracy_text, [])
+                    if predictions:
+                        frame = draw_detections(frame, predictions)
+                        update_detection_info(animal_text, accuracy_text, predictions)
+                        if hasattr(st.session_state, "update_warning"):
+                            st.session_state.update_warning(predictions, frame.shape)
+                        last_detection_time = time.time()
+                    elif time.time() - last_detection_time > 3:
+                        update_detection_info(animal_text, accuracy_text, [])
+                        if hasattr(st.session_state, "update_warning"):
+                            st.session_state.update_warning([], None)
 
-                # Display frame
-                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                video_feed.image(frame_rgb, width=650)
-            else:
-                time.sleep(0.1)
+                    # Display frame
+                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    video_feed.image(frame_rgb, width=900)
+
+                    # Update connection info
+                    queue_size = st.session_state.frame_queue.qsize()
+                    # connection_info.success(
+                    #     f"📡 Live feed active - Queue: {queue_size}/10"
+                    # )
+
+                else:
+                    # No frames available, check if connection is stale
+                    if time.time() - last_frame_time > 10:  # 10 seconds without frames
+                        connection_info.warning(
+                            "⚠️ No frames received for 10 seconds. Connection may be lost."
+                        )
+
+                    time.sleep(0.1)
+
+            except Exception as e:
+                st.error(f"Error processing stream: {e}")
+                break
+
+        # Clean up when loop ends
+        video_feed.empty()
+        connection_info.info("Stream processing stopped")
 
 
 def handle_photo_upload_content(
@@ -492,19 +805,17 @@ def handle_photo_upload_content(
             predictions = detect_objects(model, image_np, confidence_threshold)
 
             if predictions:
-                # Show only the image with detection boxes
                 annotated_img = draw_detections(image_np, predictions)
                 st.image(
                     annotated_img, caption="Detection Results", use_container_width=True
                 )
                 update_detection_info(animal_text, accuracy_text, predictions)
+                st.session_state.update_warning(predictions, image_np.shape)
             else:
-                # Show original image only when no detections found
-                st.image(
-                    image_np, caption="No Detections", use_container_width=True
-                )
+                st.image(image_np, caption="No Detections", use_container_width=True)
                 st.info("No detections in this image.")
                 update_detection_info(animal_text, accuracy_text, [])
+                st.session_state.update_warning([], None)
 
         except Exception as e:
             st.error(f"Error processing image: {e}")
@@ -672,9 +983,10 @@ def handle_video_upload_content(
 
                 # Final results
                 if detections_found:
-                    # Get best detection
                     best_detection = max(detections_found, key=lambda x: x["score"])
-                    update_detection_info(animal_text, accuracy_text, [best_detection])
+                    update_detection_info(
+                        animal_text, accuracy_text, [best_detection], (height, width, 3)
+                    )
 
                     # Summary
                     unique_animals = list(set([d["label"] for d in detections_found]))
@@ -685,6 +997,7 @@ def handle_video_upload_content(
 
                 else:
                     update_detection_info(animal_text, accuracy_text, [])
+                    st.session_state.update_warning([], None)
                     st.info("ℹ️ No detections in this video.")
 
                 # Display processed video with detection boxes

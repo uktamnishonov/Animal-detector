@@ -22,7 +22,7 @@ import signal
 
 # Configuration
 MODEL_PATH = "models/best-13.pt"
-SOCKET_PORT = 9999
+SOCKET_PORT = 3453
 CLASS_NAMES = [
     "bird",
     "boar",
